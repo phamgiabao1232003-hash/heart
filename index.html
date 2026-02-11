@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Heart</title>
+  <style>
+    html, body { height:100%; margin:0; background:#000; overflow:hidden; }
+    canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+    .overlay{
+      position:absolute; inset:0;
+      display:flex; align-items:center; justify-content:center;
+      padding:20px;
+      background:
+        radial-gradient(1200px 700px at 50% 40%, rgba(200, 220, 255, 0.10), rgba(0,0,0,0.90) 60%),
+        rgba(0,0,0,0.80);
+      opacity:0; pointer-events:none;
+      transition: opacity 900ms ease;
+    }
+    .overlay.show{ opacity:1; pointer-events:auto; }
+
+    .card{
+      max-width: 594px;
+      width: min(88vw, 594px);
+      border-radius: 18px;
+      padding: 14px 14px 10px;
+      background: rgba(255,255,255,0.06);
+      box-shadow: 0 0 45px rgba(180,210,255,0.16), 0 0 100px rgba(160,190,255,0.07);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(200,220,255,0.12);
+      color: #fff;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+
+      transform: translateY(8px);
+      opacity: 0;
+      transition: transform 900ms ease, opacity 900ms ease;
+    }
+    .overlay.show .card{
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .moon{
+      width: 54px;
+      height: 54px;
+      margin: 0 auto 6px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.95), rgba(210,230,255,0.75) 55%, rgba(150,180,220,0.35));
+      box-shadow: 0 0 16px rgba(200,220,255,0.32), 0 0 50px rgba(170,200,255,0.12);
+      position: relative;
+    }
+    .moon:after{
+      content:""; position:absolute; inset:0; border-radius:50%;
+      box-shadow: inset -9px -12px 18px rgba(0,0,0,0.18);
+      opacity: 0.55;
+    }
+
+    /* ====== PHOTO SLIDESHOW ====== */
+    .photo-frame{
+      width: 100%;
+      max-width: 360px;
+      aspect-ratio: 4 / 3;
+      border-radius: 14px;
+      overflow: hidden;
+      margin: 6px 0 8px;
+      box-shadow:
+        0 0 24px rgba(180,210,255,0.25),
+        0 0 60px rgba(150,190,255,0.12);
+    }
+    .photo-frame img{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 1200ms ease;
+      filter: saturate(1.03) contrast(1.03);
+      transform: scale(1);
+      will-change: opacity, transform;
+    }
+    .photo-frame img.show{ opacity: 1; }
+
+    /* ✅ FIX RIÊNG ẢNH SỐ 4 (đúng cú pháp object-position) */
+    .photo-frame img[src*="images/4."]{
+      object-position: center top;
+    }
+
+    /* Zoom chậm cho ảnh cuối (8s) */
+    .photo-frame img.last{
+      animation: slowZoom 8s ease-out forwards;
+    }
+    @keyframes slowZoom{
+      from{ transform: scale(1); }
+      to{ transform: scale(1.05); }
+    }
+
+    .title{
+      margin: 0 0 6px 0;
+      font-size: clamp(16px, 3.9vw, 24px);
+      font-weight: 760;
+      color: rgba(210,230,255,0.95);
+      text-shadow: 0 0 16px rgba(200,220,255,0.22);
+      width: 100%;
+      text-align: center;
+    }
+
+    .msg{
+      margin: 0;
+      width: 100%;
+      font-size: clamp(14px, 3.5vw, 18px);
+      line-height: 1.28;
+      color: rgba(245,248,255,0.92);
+      white-space: normal;
+      text-align: center;
+    }
+
+    .line{
+      display:block;
+      width: 100%;
+      text-align: center;
+      opacity:0;
+      transform: translateY(4px);
+      transition-property: opacity, transform;
+      transition-timing-function: ease;
+      will-change: opacity, transform;
+    }
+    .overlay.reveal .line{ opacity:1; transform: translateY(0); }
+    .line.last{
+      color: rgba(230,240,255,0.98);
+      text-shadow: 0 0 16px rgba(200,220,255,0.30);
+      font-weight: 700;
+    }
+
+    .hint{
+      margin-top: 8px;
+      font-size: 12px;
+      opacity: 0.70;
+      color: rgba(220,235,255,0.85);
+      width: 100%;
+      text-align: center;
+      user-select: none;
+    }
+  </style>
+</head>
+
+<body>
+<canvas id="c"></canvas>
+<audio id="bgm" src="audio/bgm.mp3" loop preload="auto"></audio>
+
+<div id="overlay" class="overlay">
+  <div class="card">
+    <div class="moon" aria-hidden="true"></div>
+
+    <div class="photo-frame">
+      <img id="photo" src="" alt="memory" />
+    </div>
+
+    <h1 class="title">Gửi đến Phùng Thị Minh Nguyệt 🌙</h1>
+    <p class="msg" id="wish"></p>
+    <div class="hint">Chạm để xem lại ✨</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const overlay = document.getElementById("overlay");
+  const wishEl = document.getElementById("wish");
+
+  // ✅ BGM (khai báo 1 lần)
+  const bgm = document.getElementById("bgm");
+
+  const DPR = Math.min(2, window.devicePixelRatio || 1);
+
+  // ====== SETTINGS ======
+  const HEART_SIZE = 0.34;
+  const BPM_BASE = 55;
+  const BPM_TOUCH_EXTRA = 45;
+  const COLOR_IDLE = 1;
+
+  const HOLD_TIME_TO_POP = 10.0;
+  const HOLD_GROW_EXTRA = 0.55;
+
+  const POP_DURATION = 1.15;
+  const POP_PARTICLES_BASE = 900;
+
+  const SILENCE_AFTER_POP = 1.4;
+  const OVERLAY_AFTER_SILENCE = 0.35;
+
+  // Text timing
+  const LINE_FADE_MS = 1200;
+  const LINE_GAP_S = 1.0;
+  const LINE_START_DELAY_S = 1.6;
+
+  // Moon ring progress
+  const RING_THICKNESS = 2.0;
+  const RING_GAP = 26;
+  const RING_START = -Math.PI/2;
+
+  // Auto quality
+  const TARGET_FPS = 55;
+  const FPS_SMOOTH = 0.07;
+  const QUALITY_SMOOTH = 0.04;
+  const Q_MIN = 0.55;
+  const Q_MAX = 1.15;
+
+  const WISH_LINES = [
+    "Chúc cô tất cả trừ vất vả.",
+    "Mong cô luôn mạnh mẽ, vững vàng và kiên định theo đuổi mục tiêu.",
+    "Never give up 🌙"
+  ];
+
+  const PHOTOS = [
+    "images/1.jpg",
+    "images/2.jpg",
+    "images/3.jpg",
+    "images/4.jpg",
+    "images/5.jpg"
+  ];
+  const DURATIONS = [3500, 3500, 3500, 3500, 8000];
+  // ======================
+
+  function escapeHtml(s){
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  function renderWishLinesCinematic() {
+    overlay.classList.remove("reveal");
+
+    let html = "";
+    for (let i = 0; i < WISH_LINES.length; i++) {
+      const isLast = (i === WISH_LINES.length - 1);
+      const delay = LINE_START_DELAY_S + i * LINE_GAP_S;
+
+      html += '<span class="line ' + (isLast ? 'last' : '') + '" ' +
+              'style="transition-duration:' + LINE_FADE_MS + 'ms; ' +
+              'transition-delay:' + Math.round(delay * 1000) + 'ms;">' +
+              escapeHtml(WISH_LINES[i]) +
+              '</span>';
+    }
+
+    wishEl.innerHTML = html;
+    requestAnimationFrame(() => overlay.classList.add("reveal"));
+  }
+
+  // ====== Slideshow ======
+  const photoEl = document.getElementById("photo");
+  let photoIndex = 0;
+  let slideTimer = null;
+
+  function clearSlideshow(){
+    if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
+    if (photoEl){
+      photoEl.classList.remove("show");
+      photoEl.classList.remove("last");
+      photoEl.removeAttribute("src");
+    }
+  }
+
+  function preloadPhotos(list){
+    for (const src of list){
+      const img = new Image();
+      img.decoding = "async";
+      img.src = src;
+    }
+  }
+
+  function startSlideshow(){
+    if (!photoEl) return;
+    clearSlideshow();
+    photoIndex = 0;
+    showPhoto(photoIndex);
+  }
+
+  function showPhoto(i){
+    if (!photoEl) return;
+
+    photoEl.classList.remove("show");
+    photoEl.classList.remove("last");
+
+    setTimeout(() => {
+      photoEl.src = PHOTOS[i];
+      const isLast = (i === PHOTOS.length - 1);
+      photoEl.classList.toggle("last", isLast);
+
+      void photoEl.offsetWidth;
+
+      photoEl.onload = () => photoEl.classList.add("show");
+
+      slideTimer = setTimeout(() => {
+        photoIndex = (i + 1) % PHOTOS.length;
+        showPhoto(photoIndex);
+      }, DURATIONS[i]);
+
+    }, 350);
+  }
+  // =======================
+
+  let vw = 0, vh = 0;
+  function resize() {
+    vw = canvas.clientWidth;
+    vh = canvas.clientHeight;
+    canvas.width  = Math.floor(vw * DPR);
+    canvas.height = Math.floor(vh * DPR);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  function beginFrame(){
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, vw, vh);
+  }
+
+  function heartPoint(t) {
+    const x = 16 * Math.pow(Math.sin(t), 3);
+    const y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+    return { x, y };
+  }
+
+  function drawHeart(cx, cy, scalePx, hue, beat, glowPx, alpha=1) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.scale(scalePx, -scalePx);
+
+    ctx.beginPath();
+    for (let i = 0; i <= 360; i++) {
+      const tt = (i / 360) * Math.PI * 2;
+      const p = heartPoint(tt);
+      const x = p.x / 18;
+      const y = p.y / 18;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+
+    ctx.shadowBlur = glowPx;
+    ctx.shadowColor = `hsla(${hue}, 95%, 60%, 0.88)`;
+    ctx.fillStyle = `hsl(${hue} 95% 55%)`;
+    ctx.fill();
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMoonRing(cx, cy, radiusPx, hold01) {
+    if (hold01 <= 0.001) return;
+
+    const end = RING_START + Math.PI * 2 * hold01;
+    const a = 0.10 + 0.55 * hold01;
+
+    ctx.save();
+    ctx.lineWidth = RING_THICKNESS;
+    ctx.lineCap = "round";
+    ctx.shadowBlur = 10 + 22*hold01;
+    ctx.shadowColor = `rgba(200,220,255,${0.25 + 0.35*hold01})`;
+    ctx.strokeStyle = `rgba(200,220,255,${a})`;
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, radiusPx, RING_START, end, false);
+    ctx.stroke();
+
+    const px = cx + Math.cos(end) * radiusPx;
+    const py = cy + Math.sin(end) * radiusPx;
+    ctx.shadowBlur = 18 + 30*hold01;
+    ctx.fillStyle = `rgba(230,240,255,${0.35 + 0.5*hold01})`;
+    ctx.beginPath();
+    ctx.arc(px, py, 2.2 + 2.5*hold01, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // POP particles
+  const popParticles = [];
+  let quality = 1.0;
+  let fpsAvg = 60;
+
+  function spawnPop(cx, cy) {
+    popParticles.length = 0;
+    const n = Math.max(240, Math.floor(POP_PARTICLES_BASE * quality));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 140 + 600 * Math.random();
+      const hue = 205 + 30*Math.random() + (Math.random()<0.18 ? 25 : 0);
+
+      popParticles.push({
+        x: cx, y: cy,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: 0,
+        max: POP_DURATION * (0.78 + 0.52*Math.random()),
+        r: 1.0 + 2.7*Math.random(),
+        hue
+      });
+    }
+  }
+
+  function updatePop(dt) {
+    for (const p of popParticles) {
+      if (p.life >= p.max) continue;
+      p.life += dt;
+      p.vx *= (1 - 0.64*dt);
+      p.vy *= (1 - 0.64*dt);
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+  }
+
+  function drawPop() {
+    for (const p of popParticles) {
+      if (p.life >= p.max) continue;
+      const t = p.life / p.max;
+      const alpha = (1 - t) * 0.95;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `hsl(${p.hue} 85% ${66 + 10*(1-t)}%)`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * (0.9 + 1.15*(1-t)), 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Interaction
+  let pointerDown = false;
+  let boost = 0;
+  let swipe = 0;
+  let hold = 0;
+  let lastX = 0, lastY = 0, lastT = 0;
+
+  let mode = "HEART";
+  let popTime = 0;
+  let silenceTime = 0;
+  let overlayDelay = 0;
+
+  function resetToHeart() {
+    overlay.classList.remove("show");
+    overlay.classList.remove("reveal");
+    mode = "HEART";
+    boost = 0; swipe = 0; hold = 0;
+    popTime = 0; silenceTime = 0; overlayDelay = 0;
+    pointerDown = false;
+    clearSlideshow();
+  }
+
+  function setDown(x, y) {
+    // ✅ Start music on first user gesture (works on iPhone/Android/PC)
+    if (bgm && bgm.paused) {
+      bgm.volume = 0.45; // chỉnh nhỏ/lớn tại đây
+      bgm.play().catch(()=>{});
+    }
+
+    if (mode === "MESSAGE") { resetToHeart(); return; }
+    pointerDown = true;
+    lastX = x; lastY = y;
+    lastT = performance.now();
+    boost = 1;
+  }
+
+  function setMove(x, y) {
+    if (!pointerDown || mode !== "HEART") return;
+    const now = performance.now();
+    const dms = Math.max(1, now - lastT);
+    const dx = x - lastX;
+    const dy = y - lastY;
+    lastX = x; lastY = y;
+    lastT = now;
+
+    const speed = Math.min(1, Math.hypot(dx, dy) / dms * 12);
+    swipe = Math.min(1, swipe + speed * 0.9);
+    boost = Math.min(1, boost + speed * 0.18);
+  }
+
+  function setUp() { pointerDown = false; }
+
+  canvas.addEventListener("mousedown", e => setDown(e.clientX, e.clientY));
+  window.addEventListener("mousemove", e => setMove(e.clientX, e.clientY));
+  window.addEventListener("mouseup", setUp);
+
+  canvas.style.touchAction = "none";
+  canvas.addEventListener("touchstart", e => {
+    e.preventDefault();
+    const p = e.touches[0];
+    setDown(p.clientX, p.clientY);
+  }, { passive:false });
+
+  canvas.addEventListener("touchmove", e => {
+    e.preventDefault();
+    const p = e.touches[0];
+    setMove(p.clientX, p.clientY);
+  }, { passive:false });
+
+  canvas.addEventListener("touchend", setUp);
+
+  function heartSizeFactor() {
+    const aspect = vh / Math.max(1, vw);
+    const f = 1 + (aspect - 1.6) * 0.10;
+    return Math.max(0.92, Math.min(1.10, f));
+  }
+
+  preloadPhotos(PHOTOS);
+
+  // Loop
+  let last = performance.now();
+  function loop(now) {
+    requestAnimationFrame(loop);
+    const dt = Math.min(0.04, (now - last) / 1000);
+    last = now;
+
+    const fps = 1 / Math.max(0.0001, dt);
+    fpsAvg = fpsAvg + (fps - fpsAvg) * FPS_SMOOTH;
+    const err = (fpsAvg - TARGET_FPS) / TARGET_FPS;
+    quality = Math.max(Q_MIN, Math.min(Q_MAX, quality + err * QUALITY_SMOOTH));
+
+    beginFrame();
+
+    const cx = vw / 2;
+    const cy = vh / 2;
+
+    if (mode === "HEART") {
+      if (!pointerDown) boost = Math.max(0, boost - dt * 1.1);
+      swipe = Math.max(0, swipe - dt * 1.6);
+
+      if (pointerDown) hold = Math.min(1, hold + dt / HOLD_TIME_TO_POP);
+      else hold = Math.max(0, hold - dt * 1.8);
+
+      const bpm = BPM_BASE + BPM_TOUCH_EXTRA * boost + 22 * swipe;
+      const freq = bpm / 60;
+      const s = 0.5 * (1 + Math.sin(2 * Math.PI * freq * now / 1000));
+      const beat = Math.pow(s, 3);
+
+      const minSide = Math.min(vw, vh);
+      const base = minSide * HEART_SIZE * heartSizeFactor();
+
+      const grow = 1 + HOLD_GROW_EXTRA * (hold * hold);
+      const scale = base * (1 + 0.08 * beat + 0.07 * boost + 0.04 * swipe) * grow;
+
+      const huePink = 340;
+      const hueMoon = 220;
+      const idleShift = (COLOR_IDLE ? 6 * Math.sin(now / 2600) : 0);
+      const hue = (huePink + (hueMoon - huePink) * hold) + idleShift + 10 * boost;
+
+      const glow = 16 + 26 * beat + 14 * boost + 10 * swipe + 55 * hold;
+
+      drawHeart(cx, cy, scale, hue, beat, glow, 1);
+      drawMoonRing(cx, cy, scale + RING_GAP, hold);
+
+      if (hold >= 1) {
+        mode = "POP";
+        popTime = 0;
+        pointerDown = false;
+        boost = 0; swipe = 0; hold = 0;
+        spawnPop(cx, cy);
+      }
+    }
+    else if (mode === "POP") {
+      popTime += dt;
+      updatePop(dt);
+      drawPop();
+
+      const fade = Math.max(0, 1 - popTime / POP_DURATION);
+      const minSide = Math.min(vw, vh);
+      const base = minSide * HEART_SIZE * heartSizeFactor();
+      drawHeart(cx, cy, base * (1.08 + 0.30*(1-fade)), 220, 0, 22 + 70*fade, 0.14*fade);
+
+      if (popTime >= POP_DURATION) {
+        mode = "SILENCE";
+        silenceTime = 0;
+        overlayDelay = 0;
+      }
+    }
+    else if (mode === "SILENCE") {
+      silenceTime += dt;
+
+      const breathe = 0.5 + 0.5 * Math.sin((now/1000) * 1.2);
+      const alpha = 0.05 + 0.08 * breathe;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.shadowBlur = 28;
+      ctx.shadowColor = "rgba(200,220,255,0.32)";
+      ctx.fillStyle = "rgba(220,235,255,0.52)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 10, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+
+      if (silenceTime >= SILENCE_AFTER_POP) {
+        overlayDelay += dt;
+        if (overlayDelay >= OVERLAY_AFTER_SILENCE) {
+          mode = "MESSAGE";
+          overlay.classList.add("show");
+          renderWishLinesCinematic();
+          startSlideshow();
+        }
+      }
+    }
+  }
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
